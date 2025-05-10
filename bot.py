@@ -11,204 +11,214 @@ from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
 
-# تنظیمات سیستم برای پشتیبانی از UTF-8
+# تنظیمات سیستم
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
-# تنظیمات لاگ پیشرفته
-class UnicodeStreamHandler(logging.StreamHandler):
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            self.stream.write(msg + self.terminator)
-            self.flush()
-        except UnicodeEncodeError:
-            msg = self.format(record).encode('utf-8', 'replace').decode('utf-8')
-            self.stream.write(msg + self.terminator)
-            self.flush()
-
+# تنظیمات لاگ
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('divar_scraper.log', encoding='utf-8'),
-        UnicodeStreamHandler()
+        logging.StreamHandler()
     ]
 )
 
 # تنظیمات اصلی
 CONFIG = {
     'output_dir': 'results',
-    'phone_number': '09217977178',  # شماره خود را وارد کنید
+    'phone_number': '09217977178',
     'default_city': 'tehran',
     'default_query': 'خودرو',
-    'max_wait_time': 30,
-    'headless': False  # برای حالت بدون نمایش مرورگر True شود
+    'max_results': 50,  # حداکثر تعداد نتایج
+    'scroll_pause': 2,  # زمان توقف بین اسکرول (ثانیه)
+    'headless': False
 }
 
-class DivarScraper:
+class RealTimeDivarScraper:
     def __init__(self):
         self.driver = self._init_driver()
         os.makedirs(CONFIG['output_dir'], exist_ok=True)
+        self.scraped_data = []
 
     def _init_driver(self):
-        """تنظیم و راه‌اندازی مرورگر Edge با قابلیت‌های پیشرفته"""
-        try:
-            options = Options()
-            
-            # تنظیمات اصلی
-            options.add_argument("--start-maximized")
-            options.add_argument("--disable-blink-features=AutomationControlled")
-            options.add_argument("--disable-notifications")
-            options.add_argument("--log-level=3")
-            
-            # بهینه‌سازی‌های امنیتی و عملکردی
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--remote-debugging-port=9222")
-            
-            if CONFIG['headless']:
-                options.add_argument("--headless=new")
-            
-            # غیرفعال کردن لاگ‌های اضافی
-            options.add_experimental_option('excludeSwitches', ['enable-logging'])
-            
-            service = Service(
-                executable_path='msedgedriver.exe',
-                service_args=['--silent']
-            )
-            
-            driver = webdriver.Edge(service=service, options=options)
-            driver.set_page_load_timeout(CONFIG['max_wait_time'])
-            return driver
-            
-        except Exception as e:
-            logging.error(f"خطا در راه‌اندازی مرورگر: {str(e)}")
-            raise
+        """تنظیم مرورگر با قابلیت‌های پیشرفته"""
+        options = Options()
+        options.add_argument("--start-maximized")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        
+        if CONFIG['headless']:
+            options.add_argument("--headless=new")
+        
+        service = Service('msedgedriver.exe')
+        return webdriver.Edge(service=service, options=options)
 
     def _manual_login(self):
-        """سیستم ورود دستی با راهنمای گام به گام"""
+        """ورود دستی به دیوار"""
         try:
-            logging.info("📲 در حال باز کردن صفحه دیوار...")
             self.driver.get("https://divar.ir")
             time.sleep(3)
 
-            # انتخاب خودکار شهر تهران
+            # انتخاب شهر
             try:
                 city_btn = WebDriverWait(self.driver, 15).until(
                     EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'تهران')]"))
                 )
                 city_btn.click()
                 time.sleep(2)
-                logging.info("✅ شهر تهران انتخاب شد")
             except:
-                logging.warning("⚠️ انتخاب شهر انجام نشد (احتمالاً قبلاً انتخاب شده)")
+                pass
 
-            logging.info("""
-            🚨 لطفاً مراحل ورود را به صورت دستی انجام دهید:
-            1. روی دکمه 'ورود' کلیک کنید
-            2. شماره تلفن را وارد کنید: %s
-            3. کد تأیید را دریافت و وارد نمایید
-            4. پس از ورود موفق، به این پنجره برگردید
-            5. کلید Enter را فشار دهید
-            """ % CONFIG['phone_number'])
-            
-            input("⏳ پس از ورود موفق، Enter را بزنید...")
+            print("\nلطفاً مراحل ورود را انجام دهید:")
+            print("1. روی دکمه ورود کلیک کنید")
+            print(f"2. شماره {CONFIG['phone_number']} را وارد کنید")
+            print("3. کد تأیید را دریافت و وارد نمایید")
+            input("پس از ورود موفق، Enter را بزنید...")
             return True
             
         except Exception as e:
-            logging.error(f"❌ خطا در فرآیند ورود: {str(e)}")
+            logging.error(f"خطا در ورود: {str(e)}")
             return False
 
-    def _save_results(self, data):
-        """ذخیره هوشمند نتایج با فرمت JSON"""
+    def _scroll_to_bottom(self):
+        """اسکرول صفحه تا انتها برای بارگذاری تمام آگهی‌ها"""
+        last_height = self.driver.execute_script("return document.body.scrollHeight")
+        while True:
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(CONFIG['scroll_pause'])
+            new_height = self.driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+                break
+            last_height = new_height
+
+    def _extract_advertisements(self):
+        """استخراج آگهی‌های واقعی از صفحه"""
+        soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+        ads = []
+        
+        for item in soup.find_all('div', class_='post-card-item')[1:-1]:
+            try:
+                title = item.find('h2', class_='post-card-title').text.strip()
+                link = item.find('a')['href']
+                if not link.startswith('http'):
+                    link = f"https://divar.ir{link}"
+                
+                ads.append({
+                    'title': title,
+                    'link': link,
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                if len(ads) >= CONFIG['max_results']:
+                    break
+                    
+            except Exception as e:
+                logging.warning(f"خطا در پردازش آگهی: {str(e)}")
+                continue
+        
+        return ads
+
+    def _get_phone_number(self, ad_url):
+        """استخراج شماره تلفن از یک آگهی"""
+        try:
+            self.driver.get(ad_url)
+            time.sleep(2)
+            
+            # کلیک روی دکمه نمایش تماس
+            contact_btn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".post-actions__get-contact"))
+            )
+            contact_btn.click()
+            time.sleep(2)
+            
+            # استخراج شماره
+            phone_element = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href^='tel:']"))
+            )
+            return phone_element.text
+            
+        except Exception as e:
+            logging.warning(f"خطا در استخراج شماره: {str(e)}")
+            return None
+
+    def _scrape_real_time_data(self):
+        """استخراج داده‌های واقعی از دیوار"""
+        try:
+            # ساخت URL جستجو
+            search_url = f"https://divar.ir/s/{CONFIG['default_city']}?q={CONFIG['default_query']}"
+            self.driver.get(search_url)
+            time.sleep(3)
+            
+            # اسکرول برای بارگذاری تمام آگهی‌ها
+            self._scroll_to_bottom()
+            
+            # استخراج لیست آگهی‌ها
+            ads = self._extract_advertisements()
+            
+            # استخراج شماره تلفن‌ها
+            for ad in ads:
+                ad['phone'] = self._get_phone_number(ad['link'])
+                time.sleep(1)  # فاصله بین درخواست‌ها
+                
+                # نمایش لحظه‌ای نتایج
+                print(f"\n📌 آگهی جدید:")
+                print(f"عنوان: {ad['title']}")
+                print(f"شماره: {ad.get('phone', 'یافت نشد')}")
+                print(f"لینک: {ad['link']}")
+                
+                self.scraped_data.append(ad)
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"خطا در استخراج داده: {str(e)}")
+            return False
+
+    def _save_results(self):
+        """ذخیره نتایج با فرمت JSON"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"results_{timestamp}.json"
+            filename = f"divar_results_{timestamp}.json"
             filepath = os.path.join(CONFIG['output_dir'], filename)
             
             with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
+                json.dump(self.scraped_data, f, ensure_ascii=False, indent=4)
             
-            # ذخیره آخرین نتایج به صورت جداگانه
-            latest_path = os.path.join(CONFIG['output_dir'], "latest_results.json")
-            with open(latest_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
-                
-            logging.info(f"💾 نتایج در {filepath} ذخیره شد")
+            logging.info(f"نتایج در {filepath} ذخیره شد")
             return filepath
             
         except Exception as e:
-            logging.error(f"❌ خطا در ذخیره نتایج: {str(e)}")
-            return None
-
-    def _scrape_data(self):
-        """مثال: تابع اصلی استخراج داده"""
-        try:
-            logging.info("🔍 در حال جمع‌آوری اطلاعات از دیوار...")
-            
-            # اینجا می‌توانید توابع استخراج خود را اضافه کنید
-            sample_data = {
-                "metadata": {
-                    "project": "Divar Scraper",
-                    "version": "2.1",
-                    "author": "nimaofe",
-                    "timestamp": datetime.now().isoformat()
-                },
-                "data": [
-                    {
-                        "title": "نمونه آگهی ۱",
-                        "phone": "09123456789",
-                        "location": "تهران"
-                    },
-                    {
-                        "title": "نمونه آگهی ۲",
-                        "phone": "09381234567",
-                        "location": "تهران"
-                    }
-                ]
-            }
-            
-            return sample_data
-            
-        except Exception as e:
-            logging.error(f"❌ خطا در استخراج داده: {str(e)}")
+            logging.error(f"خطا در ذخیره نتایج: {str(e)}")
             return None
 
     def run(self):
-        """مدیریت اصلی فرآیند"""
+        """اجرای اصلی برنامه"""
         try:
-            logging.info("🚀 شروع برنامه استخراج اطلاعات از دیوار")
+            logging.info("شروع استخراج اطلاعات از دیوار")
             
-            # ورود به سیستم
             if not self._manual_login():
                 raise Exception("ورود ناموفق بود")
             
-            # استخراج داده
-            scraped_data = self._scrape_data()
-            if not scraped_data:
-                raise Exception("هیچ داده‌ای استخراج نشد")
+            if not self._scrape_real_time_data():
+                raise Exception("خطا در استخراج داده")
             
-            # ذخیره نتایج
-            saved_file = self._save_results(scraped_data)
-            if not saved_file:
-                raise Exception("خطا در ذخیره نتایج")
-            
-            logging.info("🎉 عملیات با موفقیت تکمیل شد")
+            self._save_results()
+            logging.info("عملیات با موفقیت انجام شد")
             return True
             
         except Exception as e:
-            logging.error(f"🔴 خطای اصلی: {str(e)}")
+            logging.error(f"خطای اصلی: {str(e)}")
             return False
             
         finally:
-            if hasattr(self, 'driver') and self.driver:
+            if hasattr(self, 'driver'):
                 self.driver.quit()
-                logging.info("🛑 مرورگر بسته شد")
+                logging.info("مرورگر بسته شد")
             input("\nبرای خروج، کلیدی را فشار دهید...")
 
 if __name__ == "__main__":
-    scraper = DivarScraper()
-    success = scraper.run()
-    sys.exit(0 if success else 1)
+    scraper = RealTimeDivarScraper()
+    sys.exit(0 if scraper.run() else 1)

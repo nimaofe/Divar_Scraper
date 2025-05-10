@@ -1,0 +1,20 @@
+{
+    "metadata": {
+        "project": "Divar Scraper",
+        "version": "2.1",
+        "author": "nimaofe",
+        "timestamp": "2025-05-10T14:47:09.651310"
+    },
+    "data": [
+        {
+            "title": "نمونه آگهی ۱",
+            "phone": "09123456789",
+            "location": "تهران"
+        },
+        {
+            "title": "نمونه آگهی ۲",
+            "phone": "09381234567",
+            "location": "تهران"
+        }
+    ]
+}
