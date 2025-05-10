@@ -8,3 +8,4 @@ soupsieve==2.2.1
 selenium==4.9.0
 beautifulsoup4==4.12.2
 requests==2.31.0
+selenium webdriver-manager
