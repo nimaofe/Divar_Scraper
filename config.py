@@ -1,10 +1,9 @@
 #Programmer : t.me/nimaofe
 #----------------------------------------------------------------
-output_path = "Output" #output filder
-city = 'tehran' #result of this city
-#time_loop_check = 2 * 60 * 60 #time loop to extract phone (by second)
-category = None #result category , example : electronic-devices
-limit = None #count of result items (None : for unlimited)
-#-----------------------edit-----------------------------------------
-phone = "09217977178" #phone to login on divar.ir
-query = "خودرو" #query for search
+# تنظیمات اصلی پروژه
+output_path = "results"  # پوشه ذخیره نتایج
+city = 'tehran'         # شهر مورد نظر
+category = None         # دسته‌بندی (اختیاری)
+limit = 20              # حداکثر تعداد نتایج
+phone = "09217977178"   # شماره تلفن برای ورود
+query = "خودرو"        # عبارت جستجو
