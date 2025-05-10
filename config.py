@@ -1,9 +1,14 @@
-#Programmer : t.me/nimaofe
-#----------------------------------------------------------------
-# تنظیمات اصلی پروژه
-output_path = "results"  # پوشه ذخیره نتایج
-city = 'tehran'         # شهر مورد نظر
-category = None         # دسته‌بندی (اختیاری)
-limit = 50              # حداکثر تعداد نتایج
-phone = "09217977178"   # شماره تلفن برای ورود
-query = "خودرو"        # عبارت جستجو
+# تنظیمات اصلی
+DEFAULT_CITY = 'tehran'
+DEFAULT_QUERY = 'خودرو'
+MAX_RESULTS = 20  # حداکثر تعداد نتایج
+PHONE_NUMBER = '09217977178'  # شماره شما
+
+# تنظیمات مرورگر
+HEADLESS = False  # برای حالت بدون نمایش مرورگر=True
+WAIT_TIMEOUT = 25  # زمان انتظار برای عناصر (ثانیه)
+SCROLL_PAUSE = 1.5  # زمان توقف بین اسکرول‌ها
+
+# مسیرها
+OUTPUT_DIR = 'results'
+COOKIES_DIR = 'cookies'

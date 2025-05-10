@@ -3,8 +3,8 @@ bs4==0.0.1
 certifi
 charset-normalizer==2.0.6
 idna==3.7
-requests
 ##selenium==3.141.0
 soupsieve==2.2.1
 selenium==4.9.0
 beautifulsoup4==4.12.2
+requests==2.31.0

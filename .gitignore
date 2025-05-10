@@ -1,0 +1,9 @@
+# فایل‌های حساس
+config.py
+cookies/
+results/
+
+# فایل‌های سیستم
+__pycache__/
+*.log
+*.pyc
