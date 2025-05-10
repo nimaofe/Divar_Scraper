@@ -1,9 +1,14 @@
-# فایل‌های حساس
-config.py
-cookies/
-results/
-
 # فایل‌های سیستم
 __pycache__/
-*.log
 *.pyc
+*.log
+*.tmp
+
+# فایل‌های حساس
+config.py
+results/
+cookies/
+
+# فایل‌های IDE
+.idea/
+.vscode/
