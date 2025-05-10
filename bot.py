@@ -122,7 +122,7 @@ class DivarScraper:
             logging.warning(f"خطا در استخراج شماره: {str(e)}")
             return None
 
-    def scrape(self, query="خودرو", city="tehran", max_ads=20):
+    def scrape(self, query="خدمات", city="tehran", max_ads=20):
         """استخراج اطلاعات از دیوار"""
         try:
             if not self._login():
