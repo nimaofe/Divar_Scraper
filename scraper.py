@@ -9,8 +9,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 BASE_URL = "https://divar.ir"
-CATEGORY_URL = f"{BASE_URL}/s/tehran/services"
-AD_COUNT = 20
+CATEGORY_URL = f"{BASE_URL}/s/mashhad/services"
+AD_COUNT = 4
 MAX_RETRIES = 3
 
 class DivarScraper:
@@ -23,6 +23,8 @@ class DivarScraper:
         options = Options()
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0")
+        options.add_argument("--log-level=3")
+        options.add_experimental_option("excludeSwitches", ["enable-logging"])
         self.driver = webdriver.Edge(options=options)
         self.driver.maximize_window()
         self.wait = WebDriverWait(self.driver, 25)
@@ -35,39 +37,35 @@ class DivarScraper:
     def go_to_services(self):
         self.driver.get(CATEGORY_URL)
         print("✅ وارد بخش خدمات شد")
-        time.sleep(3)  # زمان برای لود اولیه
+        time.sleep(3)
 
     def smart_scroll(self):
-        """اسکرول هوشمند با تشخیص عناصر جدید"""
-        last_count = 0
-        retries = 0
-        
-        while retries < 5:
+        """اسکرول تطبیقی با تشخیص المان‌های جدید"""
+        last_height = 0
+        new_height = self.driver.execute_script("return document.body.scrollHeight")
+        scroll_attempts = 0
+
+        while len(self.driver.find_elements(By.CSS_SELECTOR, 'div.widget-col-d2306')) < AD_COUNT and scroll_attempts < 15:
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2.5)
-            
-            # تشخیص آگهی‌های جدید
-            current_ads = self.driver.find_elements(By.CSS_SELECTOR, 'a.unsafe-kt-post-card')
-            if len(current_ads) > last_count:
-                last_count = len(current_ads)
-                retries = 0
+            new_height = self.driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+                scroll_attempts += 1
             else:
-                retries += 1
-                
-            if last_count >= AD_COUNT:
-                break
+                scroll_attempts = 0
+                last_height = new_height
 
     def collect_ad_links(self):
         try:
             print("🔍 در حال جستجو برای آگهی‌ها...")
             self.wait.until(EC.presence_of_element_located(
-                (By.CSS_SELECTOR, 'div.unsafe-kt-post-card__info')
+                (By.CSS_SELECTOR, 'article.unsafe-kt-post-card')
             ))
             
             self.smart_scroll()
             
-            ads = self.driver.find_elements(By.CSS_SELECTOR, 'a.unsafe-kt-post-card')[:AD_COUNT]
-            links = [ad.get_attribute('href') for ad in ads if ad.get_attribute('href')]
+            ads = self.driver.find_elements(By.CSS_SELECTOR, 'article.unsafe-kt-post-card')[:AD_COUNT]
+            links = [ad.find_element(By.CSS_SELECTOR, 'a.unsafe-kt-post-card__action').get_attribute('href') for ad in ads]
             print(f"✅ {len(links)} لینک آگهی جمع‌آوری شد")
             return links
         except Exception as e:
@@ -75,29 +73,29 @@ class DivarScraper:
             return []
 
     def extract_phone_with_retry(self):
-        """استخراج شماره با مکانیزم تلاش مجدد"""
+        """استخراج شماره با مکانیزم پیشرفته"""
         for attempt in range(MAX_RETRIES):
             try:
-                # کلیک روی دکمه نمایش شماره
+                # تشخیص نوع دکمه تماس
                 contact_btn = self.wait.until(EC.element_to_be_clickable(
-                    (By.CSS_SELECTOR, 'button.post-actions__get-contact')
+                    (By.CSS_SELECTOR, 'button[data-testid="contact-button"], button.post-actions__get-contact')
                 ))
-                contact_btn.click()
+                self.driver.execute_script("arguments[0].click();", contact_btn)
                 
                 # انتظار برای لود پاپ‌آپ
                 self.wait.until(EC.visibility_of_element_located(
-                    (By.CSS_SELECTOR, 'div.kt-contact-row')
+                    (By.CSS_SELECTOR, 'div.kt-modal--scrollable, div.kt-contact-row')
                 ))
                 
-                # استخراج شماره
+                # استخراج شماره از نسخه‌های مختلف
                 phone_element = self.driver.find_element(
                     By.CSS_SELECTOR, 
-                    'a[href^="tel:"]'
+                    'a[href^="tel:"]:not([href="tel:"]), div.kt-contact-row a[href^="tel:"]'
                 )
-                return phone_element.get_attribute('href').replace('tel:', '')
-            except (TimeoutException, NoSuchElementException):
-                print(f"⚠️ تلاش {attempt+1}/{MAX_RETRIES} برای دریافت شماره ناموفق بود")
-                time.sleep(1)
+                return phone_element.get_attribute('href').replace('tel:', '').strip()
+            except (TimeoutException, NoSuchElementException) as e:
+                print(f"⚠️ تلاش {attempt+1}/{MAX_RETRIES} برای دریافت شماره ناموفق بود ({str(e)})")
+                time.sleep(1.5)
         
         print("❌ دریافت شماره پس از چندین تلاش ناموفق")
         return "یافت نشد"
@@ -107,36 +105,46 @@ class DivarScraper:
         self.driver.get(url)
         
         try:
-            # استخراج عنوان
-            title = self.wait.until(EC.presence_of_element_located(
-                (By.CSS_SELECTOR, 'h1.unsafe-kt-page-title__title')
-            )).text.strip()
-        except:
-            title = "بدون عنوان"
+            # استخراج عنوان با دو روش مختلف
+            try:
+                title = self.wait.until(EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, 'h1.kt-page-title__title, h1.unsafe-kt-page-title__title')
+                )).text.strip()
+            except:
+                title = self.driver.title.split('|')[0].strip()
+
+            # استخراج موقعیت جغرافیایی
+            try:
+                location = self.wait.until(EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, 'span.unsafe-kt-post-card__bottom-description, span.post-fields-item__value')
+                )).text.strip()
+            except:
+                location = "نامشخص"
             
-        # استخراج شماره
-        phone = self.extract_phone_with_retry()
-        
-        # ذخیره اطلاعات
-        self.data.append({
-            "title": title,
-            "phone": phone,
-            "url": url
-        })
-        print(f"📝 اطلاعات ثبت شد: {title[:30]}... | شماره: {phone}")
+            # استخراج شماره
+            phone = self.extract_phone_with_retry()
+            
+            # ذخیره اطلاعات
+            self.data.append({
+                "title": title,
+                "phone": phone,
+                "location": location,
+                "url": url
+            })
+            print(f"📝 اطلاعات ثبت شد: {title[:30]}... | شماره: {phone} | موقعیت: {location}")
+        except Exception as e:
+            print(f"❌ خطا در پردازش آگهی: {str(e)}")
 
     def save_results(self):
         try:
             os.makedirs("result", exist_ok=True)
-            file_path = os.path.join("result", "ads.csv")
+            file_path = os.path.join("result", "divar_ads.csv")
             
-            with open(file_path, "w", encoding="utf-8", newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=["title", "phone", "url"])
+            with open(file_path, "w", encoding="utf-8-sig", newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=["title", "phone", "location", "url"])
                 writer.writeheader()
                 writer.writerows(self.data)
             print(f"\n✅ داده‌ها با موفقیت در {file_path} ذخیره شدند")
-        except PermissionError:
-            print("\n❌ خطا: دسترسی به فایل مجاز نیست. مطمئن شوید فایل قبلی بسته است.")
         except Exception as e:
             print(f"\n❌ خطا در ذخیره فایل: {str(e)}")
 
@@ -151,7 +159,7 @@ class DivarScraper:
                 for i, link in enumerate(links, 1):
                     print(f"\n📌 آگهی {i}/{len(links)}")
                     self.process_ad_page(link)
-                    time.sleep(1.5)
+                    time.sleep(1.2)
                 
                 self.save_results()
             else:
